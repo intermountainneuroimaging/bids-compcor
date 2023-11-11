@@ -1,0 +1,4 @@
+
+
+# bids-compcor
+

@@ -1,0 +1,132 @@
+{
+    "author": "Intermountain Neuroimaging Consortium",
+    "cite": "https://nipype.readthedocs.io/en/latest/about.html",
+    "command": "python /flywheel/v0/run.py",
+    "config": {
+      "gear-log-level": {
+        "default": "INFO",
+        "description": "Gear Log verbosity level (ERROR|WARNING|INFO|DEBUG)",
+        "type": "string",
+        "enum": [
+          "ERROR",
+          "WARNING",
+          "INFO",
+          "DEBUG"
+        ]
+      },
+      "gear-dry-run": {
+          "default": false,
+          "description": "Do everything except actually executing gear",
+          "type": "boolean"
+      },
+      "gear-writable-dir": {
+          "default": "/pl/active/ics/fw_temp_data",
+          "description": "Gears expect to be able to write temporary files in /flywheel/v0/.  If this location is not writable (such as when running in Singularity), this path will be used instead.  fMRIPrep creates a large number of files so this disk space should be fast and local.",
+          "type": "string"
+      },
+      "slurm-cpu": {
+          "default": "2",
+          "description": "[SLURM] How many cpu-cores to request per command/task. This is used for the underlying '--cpus-per-task' option. If not running on HPC, then this flag is ignored",
+          "type": "string"
+      },
+      "slurm-ram": {
+          "default": "16G",
+          "description": "[SLURM] How much RAM to request. This is used for the underlying '--mem-per-cpu' option. If not running on HPC, then this flag is ignored",
+          "type": "string"
+      },
+      "slurm-ntasks": {
+          "default": "1",
+          "description": "[SLURM] Total number of tasks/commands across all nodes (not equivalent to neuroimaging tasks). Using a value greater than 1 for code that has not been parallelized will not improve performance (and may break things).",
+          "type": "string"
+      },
+      "slurm-nodes": {
+          "default": "1",
+          "description": "[SLURM] How many HPC nodes to run on",
+          "type": "string"
+      },
+      "slurm-partition": {
+          "default": "blanca-ics",
+          "description": "[SLURM] Blanca, Alpine, or Summit partitions can be entered",
+          "type": "string"
+      },
+      "slurm-qos": {
+          "default": "blanca-ics",
+          "description": "[SLURM] For Blanca the QOS has a different meaning, ie blanca-ics vs blanca-ibg, etc. For Alpine and Summit, the QOS should be set to normal if running a job for 1 day or less, and set to long if running a job with a maximum walltime of 7 days",
+          "type": "string"
+      },
+      "slurm-account": {
+          "default": "blanca-ics",
+          "description": "[SLURM] For Blanca the ACCOUNT should be set to the sub-account of choice (e.g. blanca-ics-rray). For Alpine, the account should be set to ucb-general, or the specialized account granted by RC: ucb278_asc1",
+          "type": "string"
+      },
+      "slurm-time": {
+          "default": "1428",
+          "description": "[SLURM] Maximum walltime requested after which your job will be cancelled if it hasn't finished. Default to 1 day",
+          "type": "string"
+      }
+    },
+    "custom": {
+        "flywheel": {
+          "classification": [
+            "fMRI"
+          ],
+          "components": [
+            "FSL"
+          ],
+          "modality": [
+            "MR"
+          ],
+          "suite": "Denoising",
+          "type": [
+            "NIFTI"
+          ]
+        },
+        "gear-builder": {
+            "category": "analysis",
+            "image": "amhe4269/bids-compcor:1.8.5_inc0.0rc1"
+        },
+        "license": "Apache-2.0"
+    },
+    "description": "(Under Development) Flywheel gear to compute basic denoising timeseries regressors including Anatomical CompCor, rigid body head motion polynomials and derivatives, and outlier frames. Currently compatible with bids-hcp (>=v1.4)",
+    "environment": {
+        "FSF_OUTPUT_FORMAT": "nii.gz",
+        "FSLDIR": "/opt/fsl-6.0.4",
+        "USER": "flywheel",
+        "FSLMULTIFILEQUIT": "TRUE",
+        "FSLOUTPUTTYPE": "NIFTI_GZ",
+        "FSLTCLSH": "/opt/fsl-6.0.4/bin/fsltclsh",
+        "FSLWISH": "/opt/fsl-6.0.4/bin/fslwish",
+        "FSL_PYTHON": "${FSLDIR}/fslpython/envs/fslpython",
+        "LD_LIBRARY_PATH": "/usr/share/fsl/lib:/usr/share/fsl/lib",
+        "PATH": "/opt/poetry/bin:/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/fsl-6.0.4/bin",
+        "REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
+        "python3": "/opt/venv/bin/python3",
+        "python": "/opt/venv/bin/python",
+        "FLYWHEEL": "/flywheel/v0",
+        "POETRY_HOME": "/opt/poetry",
+        "POETRY_VERSION": "1.7.0",
+        "POETRY_VIRTUALENVS_CREATE": "false"
+    },
+    "inputs": {
+      "api-key": {
+          "base": "api-key"
+      },
+      "preprocessing-pipeline-zip": {
+        "description": "Select preprocessing directory zip. Preprocessing outputs must be in bids derivative format. Example compatible pipelines: fmriprep, hcppipeline",
+        "base": "file",
+        "optional": false
+      },
+      "additional-input-one": {
+        "description": "(Optional) Additional preprocessing directory. Preprocessing outputs must be in bids derivative format. ",
+        "base": "file",
+        "optional": true
+      }
+    },
+    "label": "BIDS Denoising: ACompCor and Outliers",
+    "license": "MIT",
+    "maintainer": "Amy Hegarty <amhe4260@colorado.edu>",
+    "name": "bids-compcor",
+    "source": "https://github.com/intermountainneuroimaging/bids-compcor",
+    "url": "https://nipype.readthedocs.io/en/latest/api/generated/nipype.algorithms.confounds.html",
+    "version": "1.8.5_inc0.0rc1"
+}
