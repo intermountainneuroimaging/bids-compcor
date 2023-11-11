@@ -43,18 +43,12 @@ def parse_config(
     )
 
     # ##   App options:   ## #
-    app_options_keys = [
-        "task-list",
-        "output-name",
-        "confound-list",
-        "DropNonSteadyState",
-        "DummyVolumes",
-        "multirun",
-        "events-suffix",
-        "evformat",
-        "allow-missing-evs"
-    ]
-    app_options = {key: gear_context.config.get(key) for key in app_options_keys}
+    # app_options_keys = [
+    #
+    # ]
+    # app_options = {key: gear_context.config.get(key) for key in app_options_keys}
+
+    app_options = dict()
 
     work_dir = gear_options["work-dir"]
     if work_dir:
@@ -105,10 +99,6 @@ def parse_config(
 
     if app_options["additional_input"]:
         unzip_inputs(gear_options, gear_options["additional_input_zip"])
-
-    # if task-list is a comma seperated list, apply nifti concatenation for analysis
-    if "," in app_options["task-list"]:
-        app_options["task-list"] = app_options["task-list"].replace(" ","").split(",")
 
     # building fsf - use file mapper methods to generate bids filename and path
     destination = gear_context.client.get(gear_context.destination["id"])
