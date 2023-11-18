@@ -341,12 +341,8 @@ def motion_confounds(gear_options: dict, app_options: dict):
         # create a par file to pass to FD compute
         parfile = op.join(op.dirname(app_options["confounds_file"]), "tmp.par")   #first three columns contain the rotations for the X, Y, and Z voxel axes, in radians. The remaining three columns contain the estimated X, Y, and Z translations
         pardf = df[["rot_x", "rot_y", "rot_z", "trans_x", "trans_y", "trans_z"]].copy()
-        degrees_ = np.vectorize(math.degrees)
 
-        for c in ["rot_x", "rot_y", "rot_z"]:
-            pardf[c] = degrees_(pardf[c])
-
-        pardf.to_csv(parfile, sep=" ", header=None)
+        pardf.to_csv(parfile, sep=" ", header=None, index=False)
         with tempfile.TemporaryDirectory(dir=gear_options["work-dir"]) as tmpdir:
             try:
                 os.chdir(tmpdir)

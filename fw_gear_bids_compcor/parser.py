@@ -32,8 +32,7 @@ def parse_config(
         "client": gear_context.client,
         "environ": os.environ,
         "debug": gear_context.config.get("debug"),
-        "preproc_zipfile": gear_context.get_input_path("preprocessing-pipeline-zip"),
-        "FSF_TEMPLATE": gear_context.get_input_path("FSF_TEMPLATE")
+        "preproc_zipfile": gear_context.get_input_path("preprocessing-pipeline-zip")
     }
 
 
@@ -60,28 +59,6 @@ def parse_config(
         gear_options["additional_input_zip"] = gear_context.get_input_path("additional-input-one")
     else:
         app_options["additional_input"] = False
-
-    # confounds file input
-    if gear_context.get_input_path("additional-input-one"):
-        app_options["confounds_default"] = False
-        app_options["confounds_file"] = gear_context.get_input_path("confounds-file")
-    else:
-        app_options["confounds_default"] = True  # look for confounds in bids-derivative folder
-
-    # events file input
-    if gear_context.get_input_path("event-file"):
-        app_options["events-in-inputs"] = True
-        app_options["event-file"] = gear_context.get_input_path("event-file")
-
-        if ".zip" in app_options["event-file"]:
-            # event files passed as zip
-            rcc, app_options["event_dir"] = unzip_inputs(gear_options, app_options["event-file"])
-
-        else:
-            app_options["event_dir"] = os.path.dirname(app_options["event-file"])
-
-    else:
-        app_options["events-in-inputs"] = False  # look for events in flywheel acquisition
 
     # log filepaths
     log.info("Inputs file path, %s", gear_options["preproc_zipfile"])
@@ -120,8 +97,6 @@ def parse_config(
         runs.append(acqs[idx].label.replace("func-bold_", ""))
 
     app_options["runs"] = runs
-
-    app_options
 
     return gear_options, app_options
 
