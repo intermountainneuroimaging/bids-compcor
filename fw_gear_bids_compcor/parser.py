@@ -42,12 +42,11 @@ def parse_config(
     )
 
     # ##   App options:   ## #
-    # app_options_keys = [
-    #
-    # ]
-    # app_options = {key: gear_context.config.get(key) for key in app_options_keys}
-
-    app_options = dict()
+    app_options_keys = [
+        "DropNonSteadyState",
+        "DummyVolumes"
+    ]
+    app_options = {key: gear_context.config.get(key) for key in app_options_keys}
 
     work_dir = gear_options["work-dir"]
     if work_dir:
@@ -72,7 +71,7 @@ def parse_config(
     }
 
     # unzip input files
-    unzip_inputs(gear_options, gear_options["preproc_zipfile"])
+    # unzip_inputs(gear_options, gear_options["preproc_zipfile"])
 
     if app_options["additional_input"]:
         unzip_inputs(gear_options, gear_options["additional_input_zip"])

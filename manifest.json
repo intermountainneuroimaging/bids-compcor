@@ -3,6 +3,18 @@
     "cite": "https://nipype.readthedocs.io/en/latest/about.html",
     "command": "python /flywheel/v0/run.py",
     "config": {
+      "DropNonSteadyState": {
+          "type": "boolean",
+          "default": false,
+          "description": "set whether or not to remove XX number of inital non-steady state volumes. If no value is passed in 'DummyVolumes', non-steady state number is taken from mriqc IQMs, if neither are defined, an error will be returned."
+      },
+      "DummyVolumes": {
+          "type": "integer",
+          "optional": true,
+          "minimum": 0,
+          "maximum": 9999,
+          "description": "Number of dummy volumes to ignore at the beginning of scan. Leave blank if you want to use the non-steady state volumes recorded in mriqc IQMs."
+      },
       "gear-log-level": {
         "default": "INFO",
         "description": "Gear Log verbosity level (ERROR|WARNING|INFO|DEBUG)",
@@ -83,7 +95,7 @@
         },
         "gear-builder": {
             "category": "analysis",
-            "image": "amhe4269/bids-compcor:1.8.5_inc0.1"
+            "image": "amhe4269/bids-compcor:1.8.5_inc0.1rc0"
         },
         "license": "Apache-2.0"
     },
@@ -128,5 +140,5 @@
     "name": "bids-compcor",
     "source": "https://github.com/intermountainneuroimaging/bids-compcor",
     "url": "https://nipype.readthedocs.io/en/latest/api/generated/nipype.algorithms.confounds.html",
-    "version": "1.8.5_inc0.1"
+    "version": "1.8.5_inc0.1rc0"
 }

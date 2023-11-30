@@ -10,17 +10,17 @@ import pandas as pd
 import re
 import shutil
 import tempfile
-import math
-from zipfile import ZIP_DEFLATED, ZipFile
 import errorhandler
-from typing import List, Tuple, Union
-import nibabel as nib
+from typing import List, Tuple
+import nibabel as nb
+from nipype.utils.filemanip import fname_presuffix
 from flywheel_gear_toolkit import GearToolkitContext
 
 from utils.command_line import exec_command
 from nipype.algorithms.confounds import ACompCor, FramewiseDisplacement, ComputeDVARS
 from nipype.interfaces import fsl
 from nipype.interfaces.fsl.maths import ErodeImage
+from fw_gear_bids_compcor.metadata import find_matching_acq
 
 log = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
 
         # if relavent filepaths exist, generate new denoise regressors - else skip
         if os.path.exists(app_options["highres_file"]) and os.path.exists(app_options["func_file"]):
-            acompcor(gear_options, app_options)
+            acompcor(gear_options, app_options, gear_context)
 
             motion_confounds(gear_options, app_options)
 
@@ -189,7 +189,7 @@ def identify_paths(gear_options: dict, app_options: dict):
     return app_options
 
 
-def acompcor(gear_options: dict, app_options: dict):
+def acompcor(gear_options: dict, app_options: dict, gear_context: GearToolkitContext):
     log.info("ACompCor will be included as confound. Running FSL FAST segmentation now.")
 
     with tempfile.TemporaryDirectory(dir=gear_options["work-dir"]) as tmpdir:
@@ -269,6 +269,13 @@ def acompcor(gear_options: dict, app_options: dict):
                 app_options["highres_wm_mask_file"] = app_options["highres_file"].replace(".nii.gz", "_resamp_wm_mask_eroded.nii.gz")
                 app_options["highres_mask_file"] = app_options["highres_file"].replace(".nii.gz", "_resamp_mask.nii.gz")
 
+            # add option for non-steady state volume removal
+            orig_file = app_options["func_file"]
+            if app_options['DropNonSteadyState']:
+                app_options['AcqDummyVolumes'] = fetch_dummy_volumes(app_options["acqid"], gear_context)
+                app_options["func_file"]= _remove_volumes(app_options["func_file"],
+                                                                        app_options['AcqDummyVolumes'])
+
             log.info("Computing ACompCor signals now.")
             ccinterface = ACompCor()
             wm_mask = app_options["highres_file"].replace(".nii.gz", "_resamp_wm_mask_eroded.nii.gz")
@@ -279,10 +286,15 @@ def acompcor(gear_options: dict, app_options: dict):
             ccinterface.inputs.num_components = 50
             ccinterface.inputs.pre_filter = 'polynomial'
             ccinterface.inputs.regress_poly_degree = 2
-            # ccinterface.inputs.components_file = os.path.join(app_options["funcpath"], "acompcor_signals.txt")  # move this file after removing header and updating delim
             res = ccinterface.run()
 
             tmpdf = pd.read_csv('components_file.txt', sep='\t')
+
+            # add placeholder rows if dummy volumes removed before analysis
+            if app_options['DropNonSteadyState'] and app_options['AcqDummyVolumes'] > 0:
+                zeros = pd.DataFrame(np.zeros([app_options['AcqDummyVolumes'], tmpdf.shape[1]]), columns=tmpdf.columns)
+                tmpdf = pd.concat([zeros, tmpdf], axis=0, ignore_index=True)
+
             numrange = [*range(0,len(tmpdf.columns),1)]
             cols = ["a_comp_cor_"+str(s).zfill(2) for s in numrange]
 
@@ -577,3 +589,76 @@ def apply_lookup(text, lookup_table):
         for lookup in lookup_table:
             text = text.replace('{' + lookup + '}', lookup_table[lookup])
     return text
+
+
+def _remove_volumes(bold_file,n_volumes):
+    if n_volumes == 0:
+        return bold_file
+
+    out = fname_presuffix(bold_file, suffix='_cut')
+    nb.load(bold_file).slicer[..., n_volumes:].to_filename(out)
+    return out
+
+
+def _remove_timepoints(motion_file,n_volumes):
+    arr = np.loadtxt(motion_file, ndmin=2)
+    arr = arr[n_volumes:,...]
+
+    filename, file_extension = os.path.splitext(motion_file)
+    motion_file_new = motion_file.replace(file_extension,"_cut"+file_extension)
+    np.savetxt(motion_file_new, arr, delimiter='\t')
+    return motion_file_new
+
+
+def _add_volumes(bold_file, bold_cut_file, n_volumes):
+    """prepend n_volumes from bold_file onto bold_cut_file"""
+    bold_img = nb.load(bold_file)
+    bold_data = bold_img.get_fdata()
+    bold_cut_img = nb.load(bold_cut_file)
+    bold_cut_data = bold_cut_img.get_fdata()
+
+    # assign everything from n_volumes foward to bold_cut_data
+    bold_data[..., n_volumes:] = bold_cut_data
+
+    out = bold_cut_file.replace("_cut","")
+    bold_img.__class__(bold_data, bold_img.affine, bold_img.header).to_filename(out)
+    return out
+
+
+def _add_volumes_melodicmix(melodic_mix_file, n_volumes):
+
+    melodic_mix_arr = np.loadtxt(melodic_mix_file, ndmin=2)
+
+    if n_volumes > 0:
+        zeros = np.zeros([n_volumes, melodic_mix_arr.shape[1]])
+        melodic_mix_arr = np.vstack([zeros, melodic_mix_arr])
+
+        # save melodic_mix_arr
+    np.savetxt(melodic_mix_file, melodic_mix_arr, delimiter='\t')
+
+
+def fetch_dummy_volumes(taskname, context):
+    # Function generates number of dummy volumes from config or mriqc stored IQMs
+    if context.config["DropNonSteadyState"] is False:
+        return 0
+
+    acq, f = find_matching_acq(taskname, context)
+
+    if "DummyVolumes" in context.config:
+        log.info("Extracting dummy volumes from acquisition: %s", acq.label)
+        log.info("Set by user....Using %s dummy volumes", context.config['DummyVolumes'])
+        return context.config['DummyVolumes']
+
+    if f:
+        IQMs = f.info["IQM"]
+        log.info("Extracting dummy volumes from acquisition: %s", acq.label)
+        if "dummy_trs_custom" in IQMs:
+            log.info("Set by mriqc....Using %s dummy volumes", IQMs["dummy_trs_custom"])
+            return IQMs["dummy_trs_custom"]
+        else:
+            log.info("Set by mriqc....Using %s dummy volumes", IQMs["dummy_trs"])
+            return IQMs["dummy_trs"]
+
+    # if we reach this point there is a problem! return error and exit
+    log.error(
+        "Option to drop non-steady state volumes selected, no value passed or could be interpreted from session metadata. Quitting...")
