@@ -71,7 +71,7 @@ def parse_config(
     }
 
     # unzip input files
-    # unzip_inputs(gear_options, gear_options["preproc_zipfile"])
+    unzip_inputs(gear_options, gear_options["preproc_zipfile"])
 
     if app_options["additional_input"]:
         unzip_inputs(gear_options, gear_options["additional_input_zip"])
