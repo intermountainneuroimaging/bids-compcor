@@ -15,11 +15,12 @@ from typing import List, Tuple
 import nibabel as nb
 from nipype.utils.filemanip import fname_presuffix
 from flywheel_gear_toolkit import GearToolkitContext
+from functools import reduce
 
 from utils.command_line import exec_command
 from nipype.algorithms.confounds import ACompCor, FramewiseDisplacement, ComputeDVARS
 from nipype.interfaces import fsl
-from nipype.interfaces.fsl.maths import ErodeImage
+from nipype.interfaces.fsl.maths import ErodeImage, ApplyMask
 from fw_gear_bids_compcor.metadata import find_matching_acq
 
 log = logging.getLogger(__name__)
@@ -94,13 +95,22 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
         identify_paths(gear_options, app_options)
 
         # if relavent filepaths exist, generate new denoise regressors - else skip
-        if os.path.exists(app_options["highres_file"]) and os.path.exists(app_options["func_file"]):
+        if app_options["acompcor"] and os.path.exists(app_options["highres_file"]) and os.path.exists(app_options["func_file"]):
             acompcor(gear_options, app_options, gear_context)
 
+        if app_options["confounds_file"]:
             motion_confounds(gear_options, app_options)
+
+        if app_options["outliers"] and app_options["confounds_file"]:
+            # set defaults for spike threshold if none passed
+            if "dvars-spike-threshold" not in app_options:
+                app_options["dvars-spike-threshold"] = 1.5
+            if "fd-spike-threshold" not in app_options:
+                app_options["fd-spike-threshold"] = 0.5
 
             outliers(gear_options, app_options)
 
+        if app_options["confounds_file"]:
             outfiles.append(app_options["confounds_file"])
 
         else:
@@ -114,13 +124,13 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
 
     # move output files to path with destination-id
     for f in outfiles:
-        newpath = f.replace(str(gear_options["work-dir"]), op.join(gear_options["work-dir"],gear_options["destination-id"]))
+        newpath = f.replace(str(gear_options["work-dir"]), op.join(gear_options["work-dir"], gear_options["destination-id"]))
         os.makedirs(op.dirname(newpath), exist_ok=True)
         shutil.copy(f, newpath, follow_symlinks=True)
 
     # zip results
     cmd = "zip -q -r " + os.path.join(gear_options["output-dir"],
-                                      "compcor_" + str(gear_options["destination-id"])) + ".zip " + gear_options[
+                                      "counfounds_" + str(gear_options["destination-id"])) + ".zip " + gear_options[
               "destination-id"]
     execute_shell(cmd, dryrun=gear_options["dry-run"], cwd=gear_options["work-dir"])
 
@@ -144,47 +154,61 @@ def identify_paths(gear_options: dict, app_options: dict):
                     "SESSION": app_options["sesid"], "ACQ": app_options["acqid"]}
 
     # select high_resolution file - white and grey matter masks if exist
-    if pipeline == "bids-hcp":
-        app_options["highres_file"] = apply_lookup("{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/anat/sub-{SUBJECT}_ses-{SESSION}_space-MNI152NLin6Asym_desc-brain_T1w.nii.gz", lookup_table)
-        space = [s for s in app_options["highres_file"].split("_") if "space" in s]
+    if pipeline == "bids-hcp" or pipeline == "fmriprep":
+
+        highresfile = apply_lookup(
+            "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/anat/*space*desc-brain_T1w.nii.gz",
+            lookup_table)
+        app_options["highres_file"] = searchfiles(highresfile, find_first=True) if searchfiles(highresfile, find_first=True) else None
+        space = [s for s in Path(app_options["highres_file"]).stem.split("_") if "space" in s][0]
         app_options["output_space"] = space
 
-        # confounds file
-        "_desc-confounds_timeseries.tsv"
-        app_options["confounds_file"] = apply_lookup(
-            "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/func/sub-{SUBJECT}_ses-{SESSION}_{ACQ}_desc-confounds_timeseries.tsv",
+        brain_mask = apply_lookup(
+            "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/anat/*" + space + "*desc-brain_mask.nii.gz",
             lookup_table)
+
+        app_options["highres_mask_file"] = searchfiles(brain_mask, find_first=True,exit_on_errors=False) if searchfiles(brain_mask, find_first=True, exit_on_errors=False) else None
+
+        if not app_options["highres_file"]:
+            highresfile1 = searchfiles(apply_lookup(
+                "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/anat/*space*desc-preproc_T1w.nii.gz",
+                lookup_table), find_first=True)
+
+            # apply mask to highres file...
+            mask = ApplyMask()
+            mask.inputs.in_file = highresfile1
+            mask.inputs.mask_file = app_options["highres_mask_file"]
+            mask.inputs.out_file = highresfile1.replace("desc-preproc_T1w.nii.gz","desc-brain_T1w.nii.gz")
+            log.info(mask.cmdline)
+            out = mask.run()
+            app_options["highres_file"] = highresfile1.replace("desc-preproc_T1w.nii.gz","desc-brain_T1w.nii.gz")
+
+        wm_mask = apply_lookup(
+            "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/anat/*"+space+"*label-WM_probseg.nii.gz",
+            lookup_table)
+
+        gm_mask = apply_lookup(
+            "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/anat/*"+space+"*label-GM_probseg.nii.gz",
+            lookup_table)
+
+        csf_mask = apply_lookup(
+            "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/anat/*"+space+"*label-CSF_probseg.nii.gz",
+            lookup_table)
+
+        app_options["highres_wm_mask_file"] = searchfiles(wm_mask, find_first=True, exit_on_errors=False) if searchfiles(wm_mask, find_first=True, exit_on_errors=False) else None
+        app_options["highres_gm_mask_file"] = searchfiles(gm_mask, find_first=True, exit_on_errors=False) if searchfiles(gm_mask, find_first=True, exit_on_errors=False) else None
+        app_options["highres_csf_mask_file"] = searchfiles(csf_mask, find_first=True, exit_on_errors=False) if searchfiles(csf_mask, find_first=True, exit_on_errors=False) else None
+
 
         # functional preprocessed data
         app_options["func_file"] = apply_lookup(
-            "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/func/sub-{SUBJECT}_ses-{SESSION}_{ACQ}_space-MNI152NLin6Asym_desc-preproc_bold.nii.gz",
+            "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/func/sub-{SUBJECT}_ses-{SESSION}_{ACQ}_"+space+"_desc-preproc_bold.nii.gz",
             lookup_table)
 
-
-    # elif pipeline == "fmriprep":
-    #     highresfile = apply_lookup(
-    #         "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/anat/*desc-preproc_T1w.nii.gz",
-    #         lookup_table)
-    #     highresfile = searchfiles()
-    #     app_options["highres_file"] = highresfile[0]
-    #     space = [s for s in highresfile[0].split("_") if "space" in s]
-    #     app_options["output_space"] = space
-    #
-    #     wm_mask = apply_lookup(
-    #         "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/anat/*"+space+"*label-WM_probseg.nii.gz",
-    #         lookup_table)
-    #
-    #     gm_mask = apply_lookup(
-    #         "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/anat/*"+space+"*label-GM_probseg.nii.gz",
-    #         lookup_table)
-    #
-    #     csf_mask = apply_lookup(
-    #         "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/anat/*"+space+"*label-CSF_probseg.nii.gz",
-    #         lookup_table)
-    #
-    #     app_options["wm_mask_file"] = searchfiles()
-    #     app_options["gm_mask_file"] = searchfiles()
-    #     app_options["csf_mask_file"] = searchfiles()
+        # confounds file
+        app_options["confounds_file"] = apply_lookup(
+            "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/func/sub-{SUBJECT}_ses-{SESSION}_{ACQ}_desc-confounds_timeseries.tsv",
+            lookup_table)
 
     return app_options
 
@@ -198,7 +222,7 @@ def acompcor(gear_options: dict, app_options: dict, gear_context: GearToolkitCon
             os.chdir(tmpdir)
 
             # run fast segmentation to generate mask, then use eroded csf and wm for acompcor
-            if not "highres_wm_mask_file" in app_options:
+            if not app_options["highres_wm_mask_file"]:
                 # run fast segmentation to generate mask, then use eroded csf and wm for acompcor
                 fastr = fsl.FAST()
                 fastr.inputs.in_files = app_options["highres_file"]
@@ -273,13 +297,13 @@ def acompcor(gear_options: dict, app_options: dict, gear_context: GearToolkitCon
             orig_file = app_options["func_file"]
             if app_options['DropNonSteadyState']:
                 app_options['AcqDummyVolumes'] = fetch_dummy_volumes(app_options["acqid"], gear_context)
-                app_options["func_file"]= _remove_volumes(app_options["func_file"],
+                app_options["func_file"] = _remove_volumes(app_options["func_file"],
                                                                         app_options['AcqDummyVolumes'])
 
             log.info("Computing ACompCor signals now.")
             ccinterface = ACompCor()
-            wm_mask = app_options["highres_file"].replace(".nii.gz", "_resamp_wm_mask_eroded.nii.gz")
-            vent_mask = app_options["highres_file"].replace(".nii.gz", "_resamp_csf_mask_eroded.nii.gz")
+            wm_mask = app_options["highres_wm_mask_file"]
+            vent_mask = app_options["highres_csf_mask_file"]
             ccinterface.inputs.realigned_file = app_options["func_file"]
             ccinterface.inputs.mask_files = [wm_mask, vent_mask]
             ccinterface.inputs.merge_method = 'union'
@@ -408,7 +432,27 @@ def motion_confounds(gear_options: dict, app_options: dict):
 
 
 def outliers(gear_options: dict, app_options: dict):
-    pass
+
+    spike_criteria = {
+        "framewise_displacement": (">", app_options["fd-spike-threshold"]),
+        "std_dvars": (">", app_options["dvars-spike-threshold"]),
+    }
+
+    confounds_data = pd.read_csv(app_options["confounds_file"], sep="\t")
+    confounds_data = spike_regressors(
+        data=confounds_data,
+        criteria=spike_criteria,
+        header_prefix="bids_confounds_outlier",
+        lags=[0],
+        minimum_contiguous=None,
+        concatenate=True,
+        output="spikes",
+    )
+
+    confounds_data.to_csv(app_options["confounds_file"], sep='\t', index=False)
+
+    return
+
 
 # -----------------------------------------------
 # Support functions
@@ -662,3 +706,102 @@ def fetch_dummy_volumes(taskname, context):
     # if we reach this point there is a problem! return error and exit
     log.error(
         "Option to drop non-steady state volumes selected, no value passed or could be interpreted from session metadata. Quitting...")
+
+
+def spike_regressors(
+    data,
+    criteria=None,
+    header_prefix="motion_outlier",
+    lags=None,
+    minimum_contiguous=None,
+    concatenate=True,
+    output="spikes",
+):
+    """
+    Add spike regressors to a confound/nuisance matrix.
+
+    Parameters
+    ----------
+    data : :obj:`~pandas.DataFrame`
+        A tabulation of observations from which spike regressors should be
+        estimated.
+    criteria : :obj:`dict` of (:obj:`str`, ``'>'`` or ``'<'`` or :obj:`float`)
+        Criteria for generating a spike regressor. If, for a given frame, the
+        value of the variable corresponding to the key exceeds the threshold
+        indicated by the value, then a spike regressor is created for that
+        frame. By default, the strategy from [Power2014]_ is implemented: any
+        frames with FD greater than 0.5 or standardised DV greater than 1.5
+        are flagged for censoring.
+    header_prefix : :obj:`str`
+        The prefix used to indicate spike regressors in the output data table.
+    lags: :obj:`list` of :obj:`int`
+        A list indicating the frames to be censored relative to each flag.
+        For instance, ``[0]`` censors the flagged frame, while ``[0, 1]`` censors
+        both the flagged frame and the following frame.
+    minimum_contiguous : :obj:`int` or :obj:`None`
+        The minimum number of contiguous frames that must be unflagged for
+        spike regression. If any series of contiguous unflagged frames is
+        shorter than the specified minimum, then all of those frames will
+        additionally have spike regressors implemented.
+    concatenate : :obj:`bool`
+        Indicates whether the returned object should include only spikes
+        (if false) or all input time series and spikes (if true, default).
+    output : :obj:`str`
+        Indicates whether the output should be formatted as spike regressors
+        ('spikes', a separate column for each outlier) or as a temporal mask
+        ('mask', a single output column indicating the locations of outliers).
+
+    Returns
+    -------
+    data : :obj:`~pandas.DataFrame`
+        The input DataFrame with a column for each spike regressor.
+
+    References
+    ----------
+    .. [Power2014] Power JD, et al. (2014)
+        Methods to detect, characterize, and remove motion artifact in resting
+        state fMRI. NeuroImage. doi:`10.1016/j.neuroimage.2013.08.048
+        <https://doi.org/10.1016/j.neuroimage.2013.08.048>`__.
+
+    """
+    mask = {}
+    indices = range(data.shape[0])
+    lags = lags or [0]
+    criteria = criteria or {
+        "framewise_displacement": (">", 0.5),
+        "std_dvars": (">", 1.5),
+    }
+    for metric, (criterion, threshold) in criteria.items():
+        if criterion == "<":
+            mask[metric] = set(np.where(data[metric] < threshold)[0])
+        elif criterion == ">":
+            mask[metric] = set(np.where(data[metric] > threshold)[0])
+    mask = reduce((lambda x, y: x | y), mask.values())
+
+    for lag in lags:
+        mask = set([m + lag for m in mask]) | mask
+
+    mask = mask.intersection(indices)
+    if minimum_contiguous is not None:
+        post_final = data.shape[0] + 1
+        epoch_length = np.diff(sorted(mask | set([-1, post_final]))) - 1
+        epoch_end = sorted(mask | set([post_final]))
+        for end, length in zip(epoch_end, epoch_length):
+            if length < minimum_contiguous:
+                mask = mask | set(range(end - length, end))
+        mask = mask.intersection(indices)
+
+    if output == "mask":
+        spikes = np.zeros(data.shape[0])
+        spikes[list(mask)] = 1
+        spikes = pd.DataFrame(data=spikes, columns=[header_prefix])
+    else:
+        spikes = np.zeros((max(indices) + 1, len(mask)))
+        for i, m in enumerate(sorted(mask)):
+            spikes[m, i] = 1
+        header = ["{:s}{:02d}".format(header_prefix, vol) for vol in range(len(mask))]
+        spikes = pd.DataFrame(data=spikes, columns=header)
+    if concatenate:
+        return pd.concat((data, spikes), axis=1)
+    else:
+        return spikes

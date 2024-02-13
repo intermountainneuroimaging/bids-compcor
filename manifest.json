@@ -15,6 +15,30 @@
           "maximum": 9999,
           "description": "Number of dummy volumes to ignore at the beginning of scan. Leave blank if you want to use the non-steady state volumes recorded in mriqc IQMs."
       },
+      "acompcor": {
+          "type": "boolean",
+          "default": false,
+          "description": "(Default: False) Boolean flag to generate ACompCor confound regressors for input dataset."
+      },
+      "outliers": {
+          "type": "boolean",
+          "default": false,
+          "description": "(Default: False) Boolean flag to generate outlier spike regressors for input dataset. Outliers are computed based on framewise displacement (default: 0.5 mm) and standardized dvars threshold (default: 1.5). Set custom spike threshold using gear config settings fd-spike-threshold, dvars-spike-threshold. fMRIPrep's spike regressor method used for spike detection. Spike Regressors stored in confound file using prefix 'bids_confounds_outlier_XX'"
+      },
+      "dvars-spike-threshold": {
+          "type": "number",
+          "optional": true,
+          "minimum": 0,
+          "maximum": 9999,
+          "description": ""
+      },
+      "fd-spike-threshold": {
+          "type": "number",
+          "optional": true,
+          "minimum": 0,
+          "maximum": 9999,
+          "description": ""
+      },
       "gear-log-level": {
         "default": "INFO",
         "description": "Gear Log verbosity level (ERROR|WARNING|INFO|DEBUG)",
@@ -95,11 +119,11 @@
         },
         "gear-builder": {
             "category": "analysis",
-            "image": "amhe4269/bids-compcor:1.8.5_inc0.2"
+            "image": "amhe4269/bids-compcor:1.8.5_inc0.2rc0"
         },
         "license": "Apache-2.0"
     },
-    "description": "(Under Development) Flywheel gear to compute basic denoising timeseries regressors including Anatomical CompCor, rigid body head motion polynomials and derivatives, and outlier frames. Currently compatible with bids-hcp (>=v1.4)",
+    "description": "(HPC Compatible) Flywheel gear to compute basic denoising timeseries regressors including Anatomical CompCor, rigid body head motion polynomials and derivatives, and outlier frames using fMRIPrep's SpikeRegressor method. Currently compatible with bids-hcp (>=v1.4), bids-fmriprep (all versions).",
     "environment": {
         "FSF_OUTPUT_FORMAT": "nii.gz",
         "FSLDIR": "/opt/fsl-6.0.4",
@@ -140,5 +164,5 @@
     "name": "bids-compcor",
     "source": "https://github.com/intermountainneuroimaging/bids-compcor",
     "url": "https://nipype.readthedocs.io/en/latest/api/generated/nipype.algorithms.confounds.html",
-    "version": "1.8.5_inc0.2"
+    "version": "1.8.5_inc0.2rc0"
 }
