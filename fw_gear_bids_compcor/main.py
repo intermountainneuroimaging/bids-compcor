@@ -153,26 +153,44 @@ def identify_paths(gear_options: dict, app_options: dict):
     lookup_table = {"WORKDIR": str(gear_options["work-dir"]), "PIPELINE": pipeline, "SUBJECT": app_options["sid"],
                     "SESSION": app_options["sesid"], "ACQ": app_options["acqid"]}
 
+    if pipeline == "fmriprep":
+        # zero padding only relevent for versions less than v23
+        if "preproc_gear" in gear_options:
+            # check the version
+            version = gear_options["preproc_gear"]["gear_info"]["version"]
+            if version.split("_")[1] < "23.0.0":
+                task = app_options["acqid"].split("_")
+                for idx, prt in enumerate(task):
+                    if "run" in task[idx]:
+                        task[idx] = task[idx].replace("-0", "-")
+                task = "_".join(task)
+                lookup_table["ACQ"] = task
+
     # select high_resolution file - white and grey matter masks if exist
     if pipeline == "bids-hcp" or pipeline == "fmriprep":
 
+        # try to pull brain extracted T1 if present (exists in hcp workflow, not fmriprep)
         highresfile = apply_lookup(
             "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/anat/*space*desc-brain_T1w.nii.gz",
             lookup_table)
         app_options["highres_file"] = searchfiles(highresfile, find_first=True) if searchfiles(highresfile, find_first=True) else None
-        space = [s for s in Path(app_options["highres_file"]).stem.split("_") if "space" in s][0]
-        app_options["output_space"] = space
-
-        brain_mask = apply_lookup(
-            "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/anat/*" + space + "*desc-brain_mask.nii.gz",
-            lookup_table)
-
-        app_options["highres_mask_file"] = searchfiles(brain_mask, find_first=True,exit_on_errors=False) if searchfiles(brain_mask, find_first=True, exit_on_errors=False) else None
 
         if not app_options["highres_file"]:
             highresfile1 = searchfiles(apply_lookup(
                 "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/anat/*space*desc-preproc_T1w.nii.gz",
                 lookup_table), find_first=True)
+
+            space = [s for s in Path(highresfile1).stem.split("_") if "space" in s][0]
+            app_options["output_space"] = space
+
+            brain_mask = apply_lookup(
+                "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/anat/*" + space + "*desc-brain_mask.nii.gz",
+                lookup_table)
+
+            app_options["highres_mask_file"] = searchfiles(brain_mask, find_first=True,
+                                                           exit_on_errors=False) if searchfiles(brain_mask,
+                                                                                                find_first=True,
+                                                                                                exit_on_errors=False) else None
 
             # apply mask to highres file...
             mask = ApplyMask()
@@ -182,6 +200,18 @@ def identify_paths(gear_options: dict, app_options: dict):
             log.info(mask.cmdline)
             out = mask.run()
             app_options["highres_file"] = highresfile1.replace("desc-preproc_T1w.nii.gz","desc-brain_T1w.nii.gz")
+
+        else:
+            space = [s for s in Path(app_options["highres_file"]).stem.split("_") if "space" in s][0]
+            app_options["output_space"] = space
+
+            brain_mask = apply_lookup(
+                "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/anat/*" + space + "*desc-brain_mask.nii.gz",
+                lookup_table)
+
+            app_options["highres_mask_file"] = searchfiles(brain_mask, find_first=True,
+                                                           exit_on_errors=False) if searchfiles(brain_mask, find_first=True,
+                                                                                                exit_on_errors=False) else None
 
         wm_mask = apply_lookup(
             "{WORKDIR}/{PIPELINE}/sub-{SUBJECT}/ses-{SESSION}/anat/*"+space+"*label-WM_probseg.nii.gz",
@@ -198,7 +228,6 @@ def identify_paths(gear_options: dict, app_options: dict):
         app_options["highres_wm_mask_file"] = searchfiles(wm_mask, find_first=True, exit_on_errors=False) if searchfiles(wm_mask, find_first=True, exit_on_errors=False) else None
         app_options["highres_gm_mask_file"] = searchfiles(gm_mask, find_first=True, exit_on_errors=False) if searchfiles(gm_mask, find_first=True, exit_on_errors=False) else None
         app_options["highres_csf_mask_file"] = searchfiles(csf_mask, find_first=True, exit_on_errors=False) if searchfiles(csf_mask, find_first=True, exit_on_errors=False) else None
-
 
         # functional preprocessed data
         app_options["func_file"] = apply_lookup(
