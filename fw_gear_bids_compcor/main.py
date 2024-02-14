@@ -130,7 +130,7 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
 
     # zip results
     cmd = "zip -q -r " + os.path.join(gear_options["output-dir"],
-                                      "counfounds_" + str(gear_options["destination-id"])) + ".zip " + gear_options[
+                                      "compcor_" + str(gear_options["destination-id"])) + ".zip " + gear_options[
               "destination-id"]
     execute_shell(cmd, dryrun=gear_options["dry-run"], cwd=gear_options["work-dir"])
 

@@ -119,7 +119,7 @@
         },
         "gear-builder": {
             "category": "analysis",
-            "image": "amhe4269/bids-compcor:1.8.5_inc0.2rc2"
+            "image": "amhe4269/bids-compcor:1.8.5_inc0.3"
         },
         "license": "Apache-2.0"
     },
@@ -164,5 +164,5 @@
     "name": "bids-compcor",
     "source": "https://github.com/intermountainneuroimaging/bids-compcor",
     "url": "https://nipype.readthedocs.io/en/latest/api/generated/nipype.algorithms.confounds.html",
-    "version": "1.8.5_inc0.2rc2"
+    "version": "1.8.5_inc0.3"
 }
