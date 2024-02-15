@@ -95,6 +95,8 @@ def parse_config(
         # skip sbref files
         if "sbref" in x.label.lower():
             continue
+        if "ignore-BIDS" in x.label.lower():
+            continue
 
         # build lookup table with acquisition information
         runs.append(acqs[idx].label.replace("func-bold_", ""))
